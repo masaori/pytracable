@@ -1,0 +1,37 @@
+# バイトコードファイル
+__pycache__/
+*.py[cod]
+
+# パッケージングファイル
+build/
+dist/
+*.egg-info/
+*.egg
+
+# 仮想環境
+venv/
+*.venv
+env/
+*.env
+
+# インストールされたPythonファイル
+*.pyc
+
+# Jupyterノートブック
+.ipynb_checkpoints
+
+# ローカル設定ファイル
+instance/
+.webassets-cache
+
+# データベースファイル
+*.sqlite3
+
+# 環境設定ファイル
+.env
+.env.local
+.env.*
+
+# OS 生成ファイル
+.DS_Store
+Thumbs.db
