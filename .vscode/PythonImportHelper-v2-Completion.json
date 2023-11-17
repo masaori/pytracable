@@ -68,6 +68,14 @@
         "documentation": {}
     },
     {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
         "label": "os",
         "kind": 6,
         "isExtraImport": true,
@@ -86,6 +94,14 @@
     },
     {
         "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Any",
         "importPath": "typing",
         "description": "typing",
         "isExtraImport": true,
@@ -124,15 +140,6 @@
         "importPath": "traceback",
         "description": "traceback",
         "detail": "traceback",
-        "documentation": {}
-    },
-    {
-        "label": "boto3",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "boto3",
-        "description": "boto3",
-        "detail": "boto3",
         "documentation": {}
     },
     {
@@ -180,12 +187,21 @@
         "documentation": {}
     },
     {
-        "label": "gspread",
+        "label": "pychorus",
         "kind": 6,
         "isExtraImport": true,
-        "importPath": "gspread",
-        "description": "gspread",
-        "detail": "gspread",
+        "importPath": "pychorus",
+        "description": "pychorus",
+        "detail": "pychorus",
+        "documentation": {}
+    },
+    {
+        "label": "demucs.separate",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "demucs.separate",
+        "description": "demucs.separate",
+        "detail": "demucs.separate",
         "documentation": {}
     },
     {
@@ -220,7 +236,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class ProcessCategoryDefinition(EntityBase):\n    id: str\n@dataclass\nclass ProcessDefinition(EntityBase):\n    id: str\n    process_category_id: str\n    input_data_types: List[Datatype]\n    output_data_types: List[Datatype]\n    append_id_as_suffix: bool = False\n@dataclass",
+        "peekOfCode": "class ProcessCategoryDefinition(EntityBase):\n    id: str\n@dataclass\nclass ProcessDefinition(EntityBase):\n    id: str\n    process_category_id: str\n    input_data_types: List[Datatype]\n    output_data_types: List[Datatype]\n    append_id_as_suffix: bool = False\n    def suffix(self, id: str) -> str:",
         "detail": "main",
         "documentation": {}
     },
@@ -229,7 +245,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class ProcessDefinition(EntityBase):\n    id: str\n    process_category_id: str\n    input_data_types: List[Datatype]\n    output_data_types: List[Datatype]\n    append_id_as_suffix: bool = False\n@dataclass\nclass TransitionDefinition(EntityBase):\n    source_process_id: str\n    target_process_id: str",
+        "peekOfCode": "class ProcessDefinition(EntityBase):\n    id: str\n    process_category_id: str\n    input_data_types: List[Datatype]\n    output_data_types: List[Datatype]\n    append_id_as_suffix: bool = False\n    def suffix(self, id: str) -> str:\n        return f\"{id}_{self.id}\" if self.append_id_as_suffix else f\"{self.process_category_id}_{self.id}\"\n@dataclass\nclass TransitionDefinition(EntityBase):",
         "detail": "main",
         "documentation": {}
     },
@@ -238,7 +254,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class TransitionDefinition(EntityBase):\n    source_process_id: str\n    target_process_id: str\n    def __str__(self):\n        return f\"({self.source_process_id}->{self.target_process_id})\"\n@dataclass\nclass WorkflowDefinition(EntityBase):\n    id: str\n    start_process_id: str\n# @dataclass",
+        "peekOfCode": "class TransitionDefinition(EntityBase):\n    source_process_id: str\n    target_process_id: str\n    prerequisite_process_ids: List[str]\n    def __str__(self):\n        return f\"({self.source_process_id}->{self.target_process_id})\"\n@dataclass\nclass WorkflowDefinition(EntityBase):\n    id: str\n    start_process_id: str",
         "detail": "main",
         "documentation": {}
     },
@@ -256,7 +272,25 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class FileDetail:\n    location: str\n    key: str\n    data_type: Datatype\n    def to_dict(self):\n        return asdict(self)\n@dataclass\nclass MetaInfo:\n    id: str\n    title: str",
+        "peekOfCode": "class FileDetail:\n    location: str\n    key: str\n    def to_dict(self):\n        return asdict(self)\n@dataclass\nclass SongInfo:\n    title: str\n    artist: str\n    def to_dict(self):",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "SongInfo",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class SongInfo:\n    title: str\n    artist: str\n    def to_dict(self):\n        return asdict(self)\n@dataclass\nclass ProcessRecord:\n    process_id: str\n    started_at: str  # ISO8601\n    finished_at: str  # ISO8601",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "ProcessRecord",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class ProcessRecord:\n    process_id: str\n    started_at: str  # ISO8601\n    finished_at: str  # ISO8601\n    elapsed_secs: float  # seconds\n    error: Optional[str] = None\n    def to_dict(self):\n        return asdict(self)\n@dataclass\nclass MetaInfo:",
         "detail": "main",
         "documentation": {}
     },
@@ -265,7 +299,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class MetaInfo:\n    id: str\n    title: str\n    artist: str\n    files: List[FileDetail]\n    discarded_reason: Optional[str] = None\n    error: Optional[str] = None\nclass MetaInfoWriter:\n    def __init__(self, id: str, json_file_path: str):\n        self.id = id",
+        "peekOfCode": "class MetaInfo:\n    id: str\n    song_info: Optional[SongInfo]\n    file_details: List[FileDetail]\n    process_records: List[ProcessRecord]\n    discarded_reason: Optional[str] = None\n    @staticmethod\n    def default(id: str):\n        return MetaInfo(\n            id=id,",
         "detail": "main",
         "documentation": {}
     },
@@ -274,7 +308,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class MetaInfoWriter:\n    def __init__(self, id: str, json_file_path: str):\n        self.id = id\n        self.json_file_path = json_file_path\n    def _load_json(self):\n        try:\n            # check if file exists\n            if not os.path.exists(self.json_file_path):\n                return {\n                    \"id\": self.id,",
+        "peekOfCode": "class MetaInfoWriter:\n    def __init__(self, id: str, json_file_path: str):\n        self.id = id\n        self.json_file_path = json_file_path\n    def _load_json(self):\n        try:\n            # check if file exists\n            if not os.path.exists(self.json_file_path):\n                return MetaInfo.default(self.id).to_dict()\n            with open(self.json_file_path, \"r\") as f:",
         "detail": "main",
         "documentation": {}
     },
@@ -283,7 +317,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class FileSaver(ABC):\n    @abstractmethod\n    def save_from_local_path(self, local_path: str, data_type: Datatype) -> FileDetail:\n        pass\n    @abstractmethod\n    def save_from_string(self, string: str, data_type: Datatype) -> FileDetail:\n        pass\nclass LocalFileSaver:\n    def __init__(self, base_dir_path: str, file_key: str):\n        self.location = 'local'",
+        "peekOfCode": "class FileSaver(ABC):\n    @abstractmethod\n    def save_from_local_path(self, local_path: str) -> FileDetail:\n        pass\n    @abstractmethod\n    def save_from_string(self, string: str) -> FileDetail:\n        pass\n    @abstractmethod\n    def save_from_ndarray(self, ndarray: np.ndarray) -> FileDetail:\n        pass",
         "detail": "main",
         "documentation": {}
     },
@@ -292,7 +326,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class LocalFileSaver:\n    def __init__(self, base_dir_path: str, file_key: str):\n        self.location = 'local'\n        self.base_dir_path = base_dir_path\n        self.file_key = file_key\n        self.file_path = f\"{self.base_dir_path}/{self.file_key}\"\n    def save_from_local_path(self, local_path: str, data_type: Datatype) -> FileDetail:\n        # Copy file to base dir\n        try:\n            subprocess.run(",
+        "peekOfCode": "class LocalFileSaver(FileSaver):\n    def __init__(self, base_dir_path: str, file_key: str):\n        self.location = 'local'\n        self.base_dir_path = base_dir_path\n        self.file_key = file_key\n        self.file_path = f\"{self.base_dir_path}/{self.file_key}\"\n    def save_from_local_path(self, local_path: str) -> FileDetail:\n        # Copy file to base dir\n        try:\n            subprocess.run(",
         "detail": "main",
         "documentation": {}
     },
@@ -301,7 +335,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class ProcessRunner(ABC):\n    @abstractmethod\n    def run(self, file_savers: List[FileSaver], inputs: List[any]) -> Optional[FileDetail]:\n        pass\nclass DownloadYoutubeProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, meta_info_writer: MetaInfoWriter):\n        self.temp_dir_path = temp_dir_path\n        self.meta_info_writer = meta_info_writer\n        # Run below on your local and paste the output\n        # !ytmusicapi oauth",
+        "peekOfCode": "class ProcessRunner(ABC):\n    @abstractmethod\n    def run(self, file_savers: List[FileSaver], inputs: List[Any]) -> Optional[FileDetail]:\n        pass\nclass DownloadYoutubeProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str, meta_info_writer: MetaInfoWriter):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n        self.meta_info_writer = meta_info_writer\n        # Run below on your local and paste the output",
         "detail": "main",
         "documentation": {}
     },
@@ -310,7 +344,7 @@
         "kind": 6,
         "importPath": "main",
         "description": "main",
-        "peekOfCode": "class DownloadYoutubeProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, meta_info_writer: MetaInfoWriter):\n        self.temp_dir_path = temp_dir_path\n        self.meta_info_writer = meta_info_writer\n        # Run below on your local and paste the output\n        # !ytmusicapi oauth\n        with open('/tmp/youtube-oauth.json', 'w') as file:\n            file.write('{\"access_token\": \"ya29.a0AfB_byARMFsW2o9zMfN8QVvtaH1A7qUntxHtsVK37V57dwq_eD4L-DKUNxe5OrqRCHJLfMRedyjn_u0Gfx9F6l3z7vPBvfvlJ1AFHF0y7BzPLkauSd3jB_92zi6QLKkoNcq1C6_fe-3qfwCxDK1qUp7JzWRmJqzD8Vkm-OIpJ-Y7VBSNaCgYKATwSARASFQHGX2MiSqq-nWZvNsIJM4HNY0OmLw0183\", \"expires_in\": 64238, \"refresh_token\": \"1//0eWOvEBrb84fjCgYIARAAGA4SNwF-L9IrkaKX15-wybnc6tX48PnpD3DlhTbFFi-FipgYrC5g4g3l2HG2hDUVa9oVDLey56p61cg\", \"scope\": \"https://www.googleapis.com/auth/youtube\", \"token_type\": \"Bearer\", \"expires_at\": 1699735372}')\n        self.ytmusic = YTMusic(\"/tmp/youtube-oauth.json\")\n    def run(self, file_savers: List[FileSaver], inputs: List[str]) -> Optional[FileDetail]:",
+        "peekOfCode": "class DownloadYoutubeProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str, meta_info_writer: MetaInfoWriter):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n        self.meta_info_writer = meta_info_writer\n        # Run below on your local and paste the output\n        # !ytmusicapi oauth\n        with open('/tmp/youtube-oauth.json', 'w') as file:\n            file.write('{\"access_token\": \"ya29.a0AfB_byARMFsW2o9zMfN8QVvtaH1A7qUntxHtsVK37V57dwq_eD4L-DKUNxe5OrqRCHJLfMRedyjn_u0Gfx9F6l3z7vPBvfvlJ1AFHF0y7BzPLkauSd3jB_92zi6QLKkoNcq1C6_fe-3qfwCxDK1qUp7JzWRmJqzD8Vkm-OIpJ-Y7VBSNaCgYKATwSARASFQHGX2MiSqq-nWZvNsIJM4HNY0OmLw0183\", \"expires_in\": 64238, \"refresh_token\": \"1//0eWOvEBrb84fjCgYIARAAGA4SNwF-L9IrkaKX15-wybnc6tX48PnpD3DlhTbFFi-FipgYrC5g4g3l2HG2hDUVa9oVDLey56p61cg\", \"scope\": \"https://www.googleapis.com/auth/youtube\", \"token_type\": \"Bearer\", \"expires_at\": 1699735372}')\n        self.ytmusic = YTMusic(\"/tmp/youtube-oauth.json\")",
         "detail": "main",
         "documentation": {}
     },
@@ -320,6 +354,78 @@
         "importPath": "main",
         "description": "main",
         "peekOfCode": "class DescribeAttributesProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        try:\n            audio = es.MonoLoader(filename=wav_file_path).compute()\n            key_extractor = es.KeyExtractor()",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "CutoutChorusProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class CutoutChorusProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        temp_file_path = f\"{self.temp_dir_path}/chorus-{wav_file.key}\"\n        try:\n            pychorus.find_and_output_chorus(wav_file_path, temp_file_path)",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "NormalizeKeyToCProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class NormalizeKeyToCProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        temp_file_path = f\"{self.temp_dir_path}/keytoc-{wav_file.key}\"\n        try:\n            y, sr = librosa.load(wav_file_path, sr=None)",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "NormalizeTempoTo120ProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class NormalizeTempoTo120ProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        temp_file_path = f\"{self.temp_dir_path}/tempoto120-{wav_file.key}\"\n        try:\n            sr = 44100",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "TrackSeparationVocalProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class TrackSeparationVocalProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        filename = os.path.splitext(os.path.basename(wav_file.key))[0]\n        temp_file_path = os.path.join(\n            self.temp_dir_path, \"mdx_extra\", filename, f\"vocals.wav\")",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "PreparationCropProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class PreparationCropProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        y, sr = librosa.load(wav_file_path, sr=None)\n        desired_duration = 5  # seconds\n        desired_length = int(desired_duration * sr)",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "FeatureExtractionMelspectrogramProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class FeatureExtractionMelspectrogramProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        try:\n            y, sr = librosa.load(wav_file_path, sr=None)\n            S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128)",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "FeatureExtractionChromagramProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class FeatureExtractionChromagramProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        try:\n            y, sr = librosa.load(wav_file_path, sr=None)\n            chroma = librosa.feature.chroma_stft(y=y, sr=sr)",
+        "detail": "main",
+        "documentation": {}
+    },
+    {
+        "label": "FeatureExtractionMfccProcessRunner",
+        "kind": 6,
+        "importPath": "main",
+        "description": "main",
+        "peekOfCode": "class FeatureExtractionMfccProcessRunner(ProcessRunner):\n    def __init__(self, temp_dir_path: str, base_dir_path: str):\n        self.temp_dir_path = temp_dir_path\n        self.base_dir_path = base_dir_path\n    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:\n        wav_file = inputs[0]\n        wav_file_path = f\"{self.base_dir_path}/{wav_file.key}\"\n        try:\n            y, sr = librosa.load(wav_file_path, sr=None)\n            mfcc = librosa.feature.mfcc(y=y, sr=sr)",
         "detail": "main",
         "documentation": {}
     },

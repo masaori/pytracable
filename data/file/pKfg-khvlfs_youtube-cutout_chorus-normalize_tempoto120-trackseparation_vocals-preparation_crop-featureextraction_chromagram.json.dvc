@@ -1,0 +1,6 @@
+outs:
+- md5: ba474b2279651cc376fcf34dbd7369d7
+  size: 100395
+  hash: md5
+  path: 
+    pKfg-khvlfs_youtube-cutout_chorus-normalize_tempoto120-trackseparation_vocals-preparation_crop-featureextraction_chromagram.json

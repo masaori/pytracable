@@ -1,0 +1,6 @@
+outs:
+- md5: 99d7445db09b49f345022523fac210f2
+  size: 173586
+  hash: md5
+  path: 
+    pKfg-khvlfs_youtube-cutout_chorus-normalize_tempoto120-normalize_keytoc-trackseparation_vocals-preparation_crop-featureextraction_mfcc.json

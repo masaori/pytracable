@@ -1,18 +1,19 @@
 from dataclasses import dataclass, asdict
+from datetime import datetime
 import os
-from typing import Optional, List
+from typing import Optional, List, Any
 import json
 from abc import ABC, abstractmethod
 import subprocess
 import traceback
 # pip
-import boto3
-from ytmusicapi import YTMusic
-import essentia.standard as es
+from ytmusicapi import YTMusic  # type: ignore
+import essentia.standard as es  # type: ignore
 import librosa
 import numpy as np
-import soundfile as sf
-import gspread
+import soundfile as sf  # type: ignore
+import pychorus  # type: ignore
+import demucs.separate
 
 
 #
@@ -78,11 +79,15 @@ class ProcessDefinition(EntityBase):
     output_data_types: List[Datatype]
     append_id_as_suffix: bool = False
 
+    def suffix(self, id: str) -> str:
+        return f"{id}_{self.id}" if self.append_id_as_suffix else f"{self.process_category_id}_{self.id}"
+
 
 @dataclass
 class TransitionDefinition(EntityBase):
     source_process_id: str
     target_process_id: str
+    prerequisite_process_ids: List[str]
 
     def __str__(self):
         return f"({self.source_process_id}->{self.target_process_id})"
@@ -179,7 +184,27 @@ def generate_mermaid_diagram(
 class FileDetail:
     location: str
     key: str
-    data_type: Datatype
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class SongInfo:
+    title: str
+    artist: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class ProcessRecord:
+    process_id: str
+    started_at: str  # ISO8601
+    finished_at: str  # ISO8601
+    elapsed_secs: float  # seconds
+    error: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -188,11 +213,23 @@ class FileDetail:
 @dataclass
 class MetaInfo:
     id: str
-    title: str
-    artist: str
-    files: List[FileDetail]
+    song_info: Optional[SongInfo]
+    file_details: List[FileDetail]
+    process_records: List[ProcessRecord]
     discarded_reason: Optional[str] = None
-    error: Optional[str] = None
+
+    @staticmethod
+    def default(id: str):
+        return MetaInfo(
+            id=id,
+            song_info=None,
+            file_details=[],
+            process_records=[],
+            discarded_reason=None
+        )
+
+    def to_dict(self):
+        return asdict(self)
 
 
 class MetaInfoWriter:
@@ -204,14 +241,7 @@ class MetaInfoWriter:
         try:
             # check if file exists
             if not os.path.exists(self.json_file_path):
-                return {
-                    "id": self.id,
-                    "title": None,
-                    "artist": None,
-                    "files": [],
-                    "discarded_reason": None,
-                    "error": None,
-                }
+                return MetaInfo.default(self.id).to_dict()
             with open(self.json_file_path, "r") as f:
                 json_str = f.read()
                 json_obj = json.loads(json_str)
@@ -220,10 +250,9 @@ class MetaInfoWriter:
             raise e
         return json_obj
 
-    def write_song_info(self, title: str, artist: str):
+    def write_song_info(self, song_info: SongInfo):
         json_obj = self._load_json()
-        json_obj["title"] = title
-        json_obj["artist"] = artist
+        json_obj["song_info"] = song_info.to_dict()
 
         try:
             with open(self.json_file_path, "w") as f:
@@ -232,13 +261,25 @@ class MetaInfoWriter:
             print(f"Failed to write {self.json_file_path}. {e}")
             raise e
 
-    def file_exists(self, file_detail: FileDetail) -> bool:
+    def file_exists(self, file_key: str) -> bool:
         json_obj = self._load_json()
-        return any([f['key'] == file_detail.key for f in json_obj['files']])
+        return any([f['key'] == file_key for f in json_obj['file_details']])
 
-    def append_file(self, file_detail: FileDetail):
+    def append_file_detail(self, file_detail: FileDetail):
         json_obj = self._load_json()
-        json_obj["files"].append(file_detail.to_dict())
+        json_obj["file_details"].append(file_detail.to_dict())
+        json_obj["error"] = None
+
+        try:
+            with open(self.json_file_path, "w") as f:
+                f.write(json.dumps(json_obj))
+        except Exception as e:
+            print(f"Failed to write {self.json_file_path}. {e}")
+            raise e
+
+    def append_process_record(self, process_record: ProcessRecord):
+        json_obj = self._load_json()
+        json_obj["process_records"].append(process_record.to_dict())
         json_obj["error"] = None
 
         try:
@@ -273,22 +314,26 @@ class MetaInfoWriter:
 
 class FileSaver(ABC):
     @abstractmethod
-    def save_from_local_path(self, local_path: str, data_type: Datatype) -> FileDetail:
+    def save_from_local_path(self, local_path: str) -> FileDetail:
         pass
 
     @abstractmethod
-    def save_from_string(self, string: str, data_type: Datatype) -> FileDetail:
+    def save_from_string(self, string: str) -> FileDetail:
+        pass
+
+    @abstractmethod
+    def save_from_ndarray(self, ndarray: np.ndarray) -> FileDetail:
         pass
 
 
-class LocalFileSaver:
+class LocalFileSaver(FileSaver):
     def __init__(self, base_dir_path: str, file_key: str):
         self.location = 'local'
         self.base_dir_path = base_dir_path
         self.file_key = file_key
         self.file_path = f"{self.base_dir_path}/{self.file_key}"
 
-    def save_from_local_path(self, local_path: str, data_type: Datatype) -> FileDetail:
+    def save_from_local_path(self, local_path: str) -> FileDetail:
         # Copy file to base dir
         try:
             subprocess.run(
@@ -300,10 +345,9 @@ class LocalFileSaver:
         return FileDetail(
             location=self.location,
             key=self.file_key,
-            data_type=data_type
         )
 
-    def save_from_string(self, string: str, data_type: Datatype) -> FileDetail:
+    def save_from_string(self, string: str) -> FileDetail:
         # Save string to file
         try:
             with open(self.file_path, "w") as f:
@@ -315,19 +359,34 @@ class LocalFileSaver:
         return FileDetail(
             location=self.location,
             key=self.file_key,
-            data_type=data_type
+        )
+
+    def save_from_ndarray(self, ndarray: np.ndarray) -> FileDetail:
+        # Save ndarray to file
+        try:
+            with open(self.file_path, "w") as f:
+                string = json.dumps(ndarray.tolist())
+                f.write(string)
+        except Exception as e:
+            print(f"Failed to write ndarray to {self.base_dir_path}. {e}")
+            raise e
+
+        return FileDetail(
+            location=self.location,
+            key=self.file_key,
         )
 
 
 class ProcessRunner(ABC):
     @abstractmethod
-    def run(self, file_savers: List[FileSaver], inputs: List[any]) -> Optional[FileDetail]:
+    def run(self, file_savers: List[FileSaver], inputs: List[Any]) -> Optional[FileDetail]:
         pass
 
 
 class DownloadYoutubeProcessRunner(ProcessRunner):
-    def __init__(self, temp_dir_path: str, meta_info_writer: MetaInfoWriter):
+    def __init__(self, temp_dir_path: str, base_dir_path: str, meta_info_writer: MetaInfoWriter):
         self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
         self.meta_info_writer = meta_info_writer
 
         # Run below on your local and paste the output
@@ -353,7 +412,7 @@ class DownloadYoutubeProcessRunner(ProcessRunner):
             title = song['videoDetails']['title']
             artist = song['videoDetails']['author']
             self.meta_info_writer.write_song_info(
-                title=title, artist=artist)
+                SongInfo(title=title, artist=artist))
         except Exception as e:
             print(f"Failed to get song info from Youtube. {e}")
             raise e
@@ -373,8 +432,7 @@ class DownloadYoutubeProcessRunner(ProcessRunner):
             raise e
 
         file_saver = file_savers[0]
-        file_detail = file_saver.save_from_local_path(
-            temp_file_path, Datatype("wav"))
+        file_detail = file_saver.save_from_local_path(temp_file_path)
         # remove temp file
         subprocess.run(['rm', temp_file_path])
         return file_detail
@@ -406,10 +464,213 @@ class DescribeAttributesProcessRunner(ProcessRunner):
             "scale": scale,
         })
         file_saver = file_savers[0]
-        return file_saver.save_from_string(json_str, Datatype("json"))
+        return file_saver.save_from_string(json_str)
 
 
-# class CutoutChorusProcessRunner(ProcessRunner):
+class CutoutChorusProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        temp_file_path = f"{self.temp_dir_path}/chorus-{wav_file.key}"
+        try:
+            pychorus.find_and_output_chorus(wav_file_path, temp_file_path)
+        except Exception as e:
+            print(f"Failed to extract chorus from {wav_file.key}. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_local_path(temp_file_path)
+        # remove temp file
+        subprocess.run(['rm', temp_file_path])
+        return file_detail
+
+
+class NormalizeKeyToCProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        temp_file_path = f"{self.temp_dir_path}/keytoc-{wav_file.key}"
+        try:
+            y, sr = librosa.load(wav_file_path, sr=None)
+            chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+            key = np.argmax(np.sum(chroma, axis=1))
+            if key == 0:
+                # No need to normalize
+                subprocess.run(['cp', wav_file_path, temp_file_path])
+            else:
+                n_steps = 0 - key
+                if n_steps > 6:
+                    n_steps -= 12
+                elif n_steps < -6:
+                    n_steps += 12
+                y_changed_key = librosa.effects.pitch_shift(
+                    y, sr=sr, n_steps=float(n_steps))
+                sf.write(temp_file_path, y_changed_key, sr)
+        except Exception as e:
+            print(f"Failed to normalize {wav_file.key} to C. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_local_path(temp_file_path)
+        # remove temp file
+        subprocess.run(['rm', temp_file_path])
+        return file_detail
+
+
+class NormalizeTempoTo120ProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        temp_file_path = f"{self.temp_dir_path}/tempoto120-{wav_file.key}"
+        try:
+            sr = 44100
+            audio = es.MonoLoader(filename=wav_file_path,
+                                  sampleRate=sr).compute()
+            tempo_extractor = es.RhythmExtractor2013(method="multifeature")
+            tempo, beats, beats_confidence, _, beats_loudness = tempo_extractor(
+                audio)
+
+            # normilize tempo to 120
+            y_changed_tempo = librosa.effects.time_stretch(
+                audio, rate=120 / tempo)
+
+            sf.write(temp_file_path, y_changed_tempo, 44100)
+        except Exception as e:
+            print(f"Failed to normalize {wav_file.key} to 120. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_local_path(temp_file_path)
+        return file_detail
+
+
+class TrackSeparationVocalProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        filename = os.path.splitext(os.path.basename(wav_file.key))[0]
+        temp_file_path = os.path.join(
+            self.temp_dir_path, "mdx_extra", filename, f"vocals.wav")
+        try:
+            demucs.separate.main(
+                ["-o", self.temp_dir_path, "--two-stems", "vocals", "-n", "mdx_extra", wav_file_path])
+        except Exception as e:
+            print(f"Failed to separate vocals from {wav_file.key}. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_local_path(temp_file_path)
+        # remove temp file
+        subprocess.run(['rm', temp_file_path])
+        return file_detail
+
+
+class PreparationCropProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        y, sr = librosa.load(wav_file_path, sr=None)
+
+        desired_duration = 5  # seconds
+        desired_length = int(desired_duration * sr)
+        if len(y) > desired_length:
+            # クリップ
+            print(f"Cropped")
+            y = y[:desired_length]
+        elif len(y) < desired_length:
+            # 0で埋める
+            print(f"Zero filled")
+            y = np.pad(y, (0, desired_length - len(y)))
+
+        temp_file_path = f"{self.temp_dir_path}/crop-{wav_file.key}"
+        sf.write(temp_file_path, y, sr)
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_local_path(temp_file_path)
+        # remove temp file
+        subprocess.run(['rm', temp_file_path])
+        return file_detail
+
+
+class FeatureExtractionMelspectrogramProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        try:
+            y, sr = librosa.load(wav_file_path, sr=None)
+            S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128)
+            log_S = librosa.power_to_db(S, ref=np.max)
+        except Exception as e:
+            print(f"Failed to extract spectrogram from {wav_file.key}. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_ndarray(log_S)
+        return file_detail
+
+
+class FeatureExtractionChromagramProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        try:
+            y, sr = librosa.load(wav_file_path, sr=None)
+            chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+        except Exception as e:
+            print(f"Failed to extract chromagram from {wav_file.key}. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_ndarray(chroma)
+        return file_detail
+
+
+class FeatureExtractionMfccProcessRunner(ProcessRunner):
+    def __init__(self, temp_dir_path: str, base_dir_path: str):
+        self.temp_dir_path = temp_dir_path
+        self.base_dir_path = base_dir_path
+
+    def run(self, file_savers: List[FileSaver], inputs: List[FileDetail]) -> FileDetail:
+        wav_file = inputs[0]
+        wav_file_path = f"{self.base_dir_path}/{wav_file.key}"
+        try:
+            y, sr = librosa.load(wav_file_path, sr=None)
+            mfcc = librosa.feature.mfcc(y=y, sr=sr)
+        except Exception as e:
+            print(f"Failed to extract mfcc from {wav_file.key}. {e}")
+            raise e
+
+        file_saver = file_savers[0]
+        file_detail = file_saver.save_from_ndarray(mfcc)
+        return file_detail
 
 
 def main():
@@ -433,6 +694,9 @@ def main():
         ),
         ProcessCategoryDefinition(
             id="trackseparation",
+        ),
+        ProcessCategoryDefinition(
+            id="preparation",
         ),
         ProcessCategoryDefinition(
             id="featureextraction",
@@ -482,80 +746,93 @@ def main():
             input_data_types=[Datatype("wav")],
             output_data_types=[Datatype("wav")],
         ),
-        # ProcessDefinition(
-        #     id="backtracks",
-        #     process_category_id="trackseparation",
-        #     input_data_types=[Datatype("wav")],
-        #     output_data_types=[Datatype("wav")],
-        # ),
-        # featureextraction
+        # preparation
         ProcessDefinition(
-            id="spectrogram",
-            process_category_id="featureextraction",
+            id="crop",
+            process_category_id="preparation",
             input_data_types=[Datatype("wav")],
-            output_data_types=[Datatype("json", sub_type_name="spectrogram")],
+            output_data_types=[Datatype("wav")],
         ),
+        # featureextraction
         ProcessDefinition(
             id="melspectrogram",
             process_category_id="featureextraction",
             input_data_types=[Datatype("wav")],
             output_data_types=[
-                Datatype("wav", sub_type_name="melspectrogram")],
+                Datatype("json", sub_type_name="melspectrogram")],
 
         ),
         ProcessDefinition(
             id="chromagram",
             process_category_id="featureextraction",
             input_data_types=[Datatype("wav")],
-            output_data_types=[Datatype("wav", sub_type_name="chromagram")],
+            output_data_types=[Datatype("json", sub_type_name="chromagram")],
         ),
+        ProcessDefinition(
+            id="mfcc",
+            process_category_id="featureextraction",
+            input_data_types=[Datatype("wav")],
+            output_data_types=[Datatype("json", sub_type_name="mfcc")],
+        ),
+
     ]
 
     transition_definitions = [
         TransitionDefinition(
             source_process_id="youtube",
             target_process_id="attributes",
+            prerequisite_process_ids=[],
         ),
-        # TransitionDefinition(
-        #     source_process_id="youtube",
-        #     target_process_id="keytoc",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="youtube",
-        #     target_process_id="tempoto120",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="youtube",
-        #     target_process_id="chorus",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="chorus",
-        #     target_process_id="keytoc",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="chorus",
-        #     target_process_id="tempoto120",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="keytoc",
-        #     target_process_id="tempoto120",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="tempoto120",
-        #     target_process_id="vocals",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="vocals",
-        #     target_process_id="spectrogram",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="vocals",
-        #     target_process_id="melspectrogram",
-        # ),
-        # TransitionDefinition(
-        #     source_process_id="vocals",
-        #     target_process_id="chromagram",
-        # ),
+        TransitionDefinition(
+            source_process_id="youtube",
+            target_process_id="tempoto120",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="youtube",
+            target_process_id="chorus",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="chorus",
+            target_process_id="tempoto120",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="tempoto120",
+            target_process_id="keytoc",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="tempoto120",
+            target_process_id="vocals",
+            prerequisite_process_ids=["chorus"],
+        ),
+        TransitionDefinition(
+            source_process_id="keytoc",
+            target_process_id="vocals",
+            prerequisite_process_ids=["chorus"],
+        ),
+        TransitionDefinition(
+            source_process_id="vocals",
+            target_process_id="crop",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="crop",
+            target_process_id="melspectrogram",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="crop",
+            target_process_id="chromagram",
+            prerequisite_process_ids=[],
+        ),
+        TransitionDefinition(
+            source_process_id="crop",
+            target_process_id="mfcc",
+            prerequisite_process_ids=[],
+        ),
     ]
 
     # ワークフローの検証
@@ -575,8 +852,9 @@ def main():
     git_repository_root_dir_path = subprocess.run(
         ['git', 'rev-parse', '--show-toplevel'], capture_output=True).stdout.decode('utf-8').strip()
     data_dir_path = os.path.join(git_repository_root_dir_path, "data")
-    # メタ情報の保存先
+    file_dir_path = os.path.join(data_dir_path, "file")
     meta_info_base_dir_path = os.path.join(data_dir_path, "meta_info")
+    os.makedirs(file_dir_path, exist_ok=True)
     os.makedirs(meta_info_base_dir_path, exist_ok=True)
 
     ids = [
@@ -584,7 +862,7 @@ def main():
         "pKfg-khvlfs",  # แม่ของลูก - ผาขาว (メーコンルー)
     ]
 
-    for id in ids:
+    def process_by_id(id):
         print(f"Start {id}...")
         start_process = [p for p in process_definitions if p.id ==
                          workflow_definition.start_process_id][0]
@@ -594,69 +872,133 @@ def main():
 
         # ワークフローの実行
 
-        def run_process(process_definition: ProcessDefinition, previous_outputs: List[FileDetail], file_suffix_stack: List[str]) -> None:
+        def run_process(current_process_definition: ProcessDefinition, previous_outputs: List[FileDetail], process_stack: List[ProcessDefinition]) -> None:
             process_category_definition = [
-                c for c in process_category_definitions if c.id == process_definition.process_category_id][0]
-            process_name = f"{process_category_definition.id}_{process_definition.id}"
-            append_file_suffix = f"{id}_{process_definition.id}" if process_definition.append_id_as_suffix else f"{process_category_definition.id}_{process_definition.id}"
-            appended_file_suffix_stack = file_suffix_stack + \
-                [append_file_suffix]
+                c for c in process_category_definitions if c.id == current_process_definition.process_category_id][0]
+            process_name = f"{process_category_definition.id}_{current_process_definition.id}"
+            appended_process_stack = process_stack + \
+                [current_process_definition]
+            appended_file_suffix_stack = [
+                p.suffix(id) for p in appended_process_stack]
             file_name = '-'.join(appended_file_suffix_stack)
             file_keys = [
-                f"{file_name}.{dt.name}" for dt in process_definition.output_data_types]
+                f"{file_name}.{dt.name}" for dt in current_process_definition.output_data_types]
+            next_process_definitions = []
+            for t in transition_definitions:
+                if t.source_process_id == current_process_definition.id:
+                    process_stack_ids = [
+                        ps.id for ps in appended_process_stack]
+                    if len(t.prerequisite_process_ids) == 0 or all([pid in process_stack_ids for pid in t.prerequisite_process_ids]):
+                        target_process = [
+                            p for p in process_definitions if p.id == t.target_process_id][0]
+                        next_process_definitions.append(target_process)
+                    else:
+                        print(
+                            f"- Skip transition {t} because prerequisite processes are not satisfied. {process_stack_ids} vs {t.prerequisite_process_ids}")
+
+            def run_next_processes(output: Optional[FileDetail]):
+                for next_process_definition in next_process_definitions:
+                    run_process(next_process_definition, [
+                                output if output is not None else FileDetail(
+                                    location='local',
+                                    key=f"{file_name}.{dt.name}",
+                                ) for dt in current_process_definition.output_data_types], appended_process_stack)
 
             # すでにファイルが存在する場合はスキップ
-            if all([meta_info_writer.file_exists(FileDetail(location='local', key=file_key, data_type=Datatype('wav'))) for file_key in file_keys]):
+            if all([meta_info_writer.file_exists(file_key) for file_key in file_keys]):
                 print(f"Skip {process_name} for {id}...")
+                run_next_processes(None)
                 return
 
             file_savers = [LocalFileSaver(
-                base_dir_path=data_dir_path, file_key=file_key) for file_key in file_keys]
+                base_dir_path=file_dir_path, file_key=file_key) for file_key in file_keys]
 
-            if process_definition.id == 'youtube':
+            process_runner: ProcessRunner
+            if current_process_definition.id == 'youtube':
                 temp_dir_path = f"/tmp/download-youtube"
                 process_runner = DownloadYoutubeProcessRunner(
-                    temp_dir_path=temp_dir_path, meta_info_writer=meta_info_writer)
-            elif process_definition.id == 'attributes':
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path, meta_info_writer=meta_info_writer)
+            elif current_process_definition.id == 'attributes':
                 temp_dir_path = f"/tmp/describe-attributes"
                 process_runner = DescribeAttributesProcessRunner(
-                    temp_dir_path=temp_dir_path, base_dir_path=data_dir_path)
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'chorus':
+                temp_dir_path = f"/tmp/cutout-chorus"
+                process_runner = CutoutChorusProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'keytoc':
+                temp_dir_path = f"/tmp/normalize-keytoc"
+                process_runner = NormalizeKeyToCProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'tempoto120':
+                temp_dir_path = f"/tmp/normalize-tempoto120"
+                process_runner = NormalizeTempoTo120ProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'vocals':
+                temp_dir_path = f"/tmp/trackseparation-vocals"
+                process_runner = TrackSeparationVocalProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'crop':
+                temp_dir_path = f"/tmp/preparation-crop"
+                process_runner = PreparationCropProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'melspectrogram':
+                temp_dir_path = f"/tmp/featureextraction-melspectrogram"
+                process_runner = FeatureExtractionMelspectrogramProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'chromagram':
+                temp_dir_path = f"/tmp/featureextraction-chromagram"
+                process_runner = FeatureExtractionChromagramProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
+            elif current_process_definition.id == 'mfcc':
+                temp_dir_path = f"/tmp/featureextraction-mfcc"
+                process_runner = FeatureExtractionMfccProcessRunner(
+                    temp_dir_path=temp_dir_path, base_dir_path=file_dir_path)
             else:
                 raise Exception(
-                    f"Process {process_definition.id} is not supported.")
+                    f"Process {current_process_definition.id} is not supported.")
             os.makedirs(temp_dir_path, exist_ok=True)
 
             try:
                 print(
                     f"Run {process_name} for {id}...")
-                outputs = process_runner.run(
-                    file_savers=file_savers, inputs=previous_outputs)
-                meta_info_writer.append_file(outputs)
+                started_at = datetime.now()
+                output = process_runner.run(
+                    file_savers=[f for f in file_savers], inputs=previous_outputs)
+                finished_at = datetime.now()
+                meta_info_writer.append_file_detail(output)
+                meta_info_writer.append_process_record(
+                    ProcessRecord(
+                        process_id=current_process_definition.id,
+                        started_at=started_at.isoformat(),
+                        finished_at=finished_at.isoformat(),
+                        elapsed_secs=(finished_at - started_at).total_seconds()
+                    )
+                )
                 print(
-                    f"Finished {process_name} for {id}..."
+                    f"Finished {process_name} for {id} : elapsed {finished_at - started_at}"
                 )
             except Exception as e:
-                print(f"Failed to run {process_definition.id}. {e}")
+                print(f"Failed to run {current_process_definition.id}. {e}")
                 traceback.print_exc()
                 meta_info_writer.error(
-                    f"Failed to run {process_definition.id}. {e}")
+                    f"Failed to run {current_process_definition.id}. {e}")
                 return
 
-            if outputs is None:
+            if output is None:
+                # Discarded
                 return
-
-            next_process_definitions = [p for p in process_definitions if p.id in [
-                t.target_process_id for t in transition_definitions if t.source_process_id == process_definition.id]]
 
             if len(next_process_definitions) == 0:
                 # ワークフローの終了
                 return
 
-            for next_process_definition in next_process_definitions:
-                run_process(next_process_definition, [
-                            outputs], appended_file_suffix_stack)
+            run_next_processes(output)
 
         run_process(start_process, [id], [])
+
+    for id in ids:
+        process_by_id(id)
 
 
 if __name__ == "__main__":
